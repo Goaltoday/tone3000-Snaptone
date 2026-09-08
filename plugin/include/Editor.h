@@ -106,6 +106,13 @@ private:
                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
   std::unique_ptr<juce::FileChooser> localFileChooser;
 
+  // Native pickers used by the NAM -> CLO conversion tab. `kind` is one of
+  // recorded, correctiveIr, reference, or output; the callback resolves with
+  // { kind, path } or { cancelled: true }.
+  void pickConversionFile(const juce::String& kind,
+                          juce::WebBrowserComponent::NativeFunctionCompletion completion);
+  std::unique_ptr<juce::FileChooser> conversionFileChooser;
+
   // Chain-change push: a lightweight native timer watches the processor's
   // revision counter (an atomic read, far cheaper than the webview polling
   // across the bridge) and emits a `chainChanged` event when it moves. The

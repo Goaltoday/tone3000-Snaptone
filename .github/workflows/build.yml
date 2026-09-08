@@ -92,6 +92,8 @@ jobs:
         with:
           path: |
             libs/juce
+            libs/r8brain-free-src
+            libs/soxr
             libs/googletest
             libs/clap-juce-extensions
           key: cpm-deps-${{ matrix.os }}-${{ hashFiles('CMakeLists.txt', 'plugin/CMakeLists.txt') }}

@@ -243,6 +243,18 @@ target_sources(${PROJECT_NAME}
         src/PresetManager.cpp
         include/Processor.h
         src/Processor.cpp
+        include/ConversionManager.h
+        src/ConversionManager.cpp
+        conversion/src/native_converter.hpp
+        conversion/src/native_converter.cpp
+        conversion/src/stimulus.hpp
+        conversion/src/stimulus.cpp
+        conversion/src/corrective_ir.hpp
+        conversion/src/corrective_ir.cpp
+        conversion/src/clo_refiner.hpp
+        conversion/src/clo_refiner.cpp
+        conversion/src/common.hpp
+        conversion/src/common.cpp
         include/MidiMapper.h
         src/MidiMapper.cpp
         src/ProcessorChain.cpp
@@ -301,6 +313,9 @@ target_include_directories(${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/NeuralAmpModelerCore/Dependencies/nlohmann
         ${CMAKE_CURRENT_SOURCE_DIR}/AudioDSPTools
         ${CMAKE_CURRENT_SOURCE_DIR}/AudioDSPTools/dsp/ResamplingContainer/Dependencies
+        ${LIB_DIR}/r8brain-free-src
+        ${LIB_DIR}/soxr/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/conversion/src
 )
 
 # The define also gates the is_a2_shape declaration, which the plugin uses to
@@ -308,6 +323,26 @@ target_include_directories(${PROJECT_NAME}
 # Defined here too because NAM is linked as a whole-archive flag on
 # macOS/Linux, which doesn't propagate the NAM target's definitions.
 target_compile_definitions(${PROJECT_NAME} PRIVATE NAM_ENABLE_A2_FAST)
+
+# Converter DSP dependencies. r8bbase.cpp is required by the pinned r8brain
+# 3.7 template-era CDSPResampler24 implementation; fft4g.c is the Ooura RDFT
+# shipped by SoXR 0.1.3 and is linked directly into the plugin.
+if (EXISTS "${LIB_DIR}/r8brain-free-src/r8bbase.cpp")
+    add_library(t3k_r8brain_base OBJECT "${LIB_DIR}/r8brain-free-src/r8bbase.cpp")
+    target_include_directories(t3k_r8brain_base PRIVATE "${LIB_DIR}/r8brain-free-src")
+    target_compile_options(t3k_r8brain_base PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W0>)
+    target_sources(${PROJECT_NAME} PRIVATE $<TARGET_OBJECTS:t3k_r8brain_base>)
+endif()
+if (EXISTS "${LIB_DIR}/soxr/src/fft4g.c")
+    target_sources(${PROJECT_NAME} PRIVATE "${LIB_DIR}/soxr/src/fft4g.c")
+else()
+    message(FATAL_ERROR "SoXR FFT4G source is missing; configure must fetch ${LIB_DIR}/soxr")
+endif()
+if (EXISTS "${LIB_DIR}/r8brain-free-src/CDSPResampler.h")
+    target_include_directories(${PROJECT_NAME} PRIVATE "${LIB_DIR}/r8brain-free-src")
+else()
+    message(FATAL_ERROR "r8brain CDSPResampler.h is missing; configure must fetch ${LIB_DIR}/r8brain-free-src")
+endif()
 
 # JUCE modules used
 target_link_libraries(${PROJECT_NAME}
@@ -351,6 +386,12 @@ add_dependencies(${PROJECT_NAME} NAM)
 if (NOT HEADLESS)
     # Add Webview GUI files as binary data (built by npm run build in ui/)
     file(GLOB_RECURSE WEB_ASSETS "${CMAKE_CURRENT_SOURCE_DIR}/webview/*.*")
+    # The verified converter's 44.1 kHz mono PCM16 stimulus is embedded in
+    # the same JUCE BinaryData bundle. Processor.cpp materializes it to the
+    # per-user conversion cache before starting a job.
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/conversion/resources/nam_input_wav.wav")
+        list(APPEND WEB_ASSETS "${CMAKE_CURRENT_SOURCE_DIR}/conversion/resources/nam_input_wav.wav")
+    endif()
     # Fallback: CI configures before UI build; use placeholder so juce_add_binary_data succeeds.
     # Reconfigure after "Build UI" step to pick up real assets.
     if (NOT WEB_ASSETS)
@@ -368,7 +409,8 @@ if (NOT HEADLESS)
     )
 else()
     # Generate a dummy BinaryData.h to avoid missing include errors
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/BinaryData.h" "// Empty stub for Embedded builds\n")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/BinaryData.h"
+        "#pragma once\nnamespace BinaryData { inline const char* getNamedResource(const char*, int& size) { size = 0; return nullptr; } }\n")
     target_include_directories(${PROJECT_NAME}
         PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
     )

@@ -1,6 +1,10 @@
 #include "Processor.h"
+#if !HEADLESS
+#include "BinaryData.h"
+#endif
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 
 // ####################
 // CHAIN MANAGEMENT
@@ -1675,4 +1679,109 @@ void TONE3000Processor::setAccessToken(const juce::String& token) {
 juce::String TONE3000Processor::getAccessToken() const {
   juce::ScopedLock lock(accessTokenMutex);
   return accessToken;
+}
+
+namespace {
+
+bool optionBool(const juce::DynamicObject* object, const char* key, bool fallback = false) {
+  if (object == nullptr || !object->hasProperty(key)) return fallback;
+  const auto value = object->getProperty(key);
+  if (value.isBool()) return static_cast<bool>(value);
+  if (value.isInt() || value.isInt64() || value.isDouble()) return static_cast<double>(value) > 0.5;
+  return value.toString().equalsIgnoreCase("true") || value.toString() == "1";
+}
+
+juce::String optionString(const juce::DynamicObject* object, const char* key) {
+  return object != nullptr && object->hasProperty(key) ? object->getProperty(key).toString() : juce::String();
+}
+
+juce::var conversionObject(std::initializer_list<std::pair<const char*, juce::var>> values) {
+  auto object = new juce::DynamicObject();
+  for (const auto& [key, value] : values) object->setProperty(key, value);
+  return juce::var(object);
+}
+
+}  // namespace
+
+juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
+  auto* object = options.getDynamicObject();
+  const auto blockId = optionString(object, "blockId").toStdString();
+  ConversionManager::Request request;
+
+  {
+    juce::ScopedLock lock(chainMutex);
+    ChainBlock* selected = nullptr;
+    for (auto& laneBlocks : lanes) {
+      for (auto& candidate : laneBlocks) {
+        if (candidate != nullptr && candidate->id == blockId) {
+          selected = candidate.get();
+          break;
+        }
+      }
+      if (selected != nullptr) break;
+    }
+    if (selected == nullptr || selected->type != ChainBlockType::NAM)
+      return conversionObject({{"error", "Select a NAM block from the chain."}});
+    if (!selected->loaded && selected->modelCache.find(selected->activeModelId) == selected->modelCache.end())
+      return conversionObject({{"error", "Wait until the NAM has finished loading."}});
+
+    const auto cache = selected->modelCache.find(selected->activeModelId);
+    if (cache == selected->modelCache.end() || cache->second.empty())
+      return conversionObject({{"error", "The active NAM bytes are not available."}});
+    request.namBytes = cache->second;
+    request.modelName = optionString(object, "modelName");
+    if (request.modelName.isEmpty()) {
+      if (auto* tone = selected->toneVar.getDynamicObject())
+        request.modelName = tone->getProperty("title").toString();
+    }
+    if (request.modelName.isEmpty()) request.modelName = "TONE3000-model";
+  }
+
+  const auto destination = optionString(object, "destination").toLowerCase();
+  request.destination = destination == "gp5" ? ntc::CloDestination::Gp5 : ntc::CloDestination::Gp200;
+  const auto tail = optionString(object, "tailMode").toLowerCase();
+  request.tailMode = tail == "recorded" ? ntc::TailMode::RecordedAudio : ntc::TailMode::PresetAudio;
+  request.recordedAudio = optionString(object, "recordedAudio");
+  request.correctiveIr = optionString(object, "correctiveIr");
+  request.referenceWav = optionString(object, "referenceWav");
+  request.outputDirectory = optionString(object, "outputDirectory");
+  request.correctiveIrEnabled = optionBool(object, "correctiveIrEnabled");
+
+#if !HEADLESS
+  // The official nam_input_wav.wav is embedded in WebAssets so a deployed
+  // plugin never depends on the current working directory. Materialize one
+  // stable per-user copy for the converter, refreshing only on size changes.
+  int stimulusSize = 0;
+  const char* stimulusData = BinaryData::getNamedResource("nam_input_wav_wav", stimulusSize);
+  if (stimulusData == nullptr || stimulusSize <= 0)
+    return conversionObject({{"error", "The embedded conversion stimulus is missing from this build."}});
+  const auto stimulusFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                .getChildFile("TONE3000")
+                                .getChildFile("Conversion")
+                                .getChildFile("nam_input_wav.wav");
+  if (!stimulusFile.existsAsFile() || stimulusFile.getSize() != stimulusSize) {
+    if (!stimulusFile.getParentDirectory().createDirectory().wasOk()
+        && !stimulusFile.getParentDirectory().isDirectory())
+      return conversionObject({{"error", "Cannot create the conversion resource directory."}});
+    if (!stimulusFile.replaceWithData(stimulusData, static_cast<size_t>(stimulusSize)))
+      return conversionObject({{"error", "Cannot materialize the embedded conversion stimulus."}});
+  }
+  request.originalStimulus = stimulusFile.getFullPathName();
+#else
+  return conversionObject({{"error", "NAM to CLO conversion requires the GUI plugin build."}});
+#endif
+
+  if (request.outputDirectory.isEmpty()) {
+    request.outputDirectory = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                                  .getChildFile("TONE3000 CLO").getFullPathName();
+  }
+  if (conversionManager == nullptr)
+    return conversionObject({{"error", "The conversion service is unavailable."}});
+  return conversionManager->start(std::move(request));
+}
+
+juce::var TONE3000Processor::getNamToCloStatus(const juce::String& jobId) const {
+  if (conversionManager == nullptr)
+    return conversionObject({{"jobId", jobId}, {"phase", "unavailable"}, {"error", "The conversion service is unavailable."}});
+  return conversionManager->getStatus(jobId);
 }

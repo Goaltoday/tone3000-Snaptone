@@ -1,0 +1,122 @@
+name: Build TONE3000 GP Edition
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: CMake build configuration
+        required: true
+        default: Release
+        type: choice
+        options: [Release, Debug]
+  pull_request:
+    paths:
+      - 'plugin/conversion/**'
+      - 'plugin/include/ConversionManager.h'
+      - 'plugin/src/ConversionManager.cpp'
+      - 'plugin/src/Processor*.cpp'
+      - 'plugin/src/Editor*.cpp'
+      - 'ui/**'
+      - 'CMakeLists.txt'
+      - 'plugin/CMakeLists.txt'
+      - '.github/workflows/build-gp-edition.yml'
+
+permissions:
+  contents: read
+
+env:
+  BUILD_TYPE: ${{ inputs.build_type || 'Release' }}
+  VITE_T3K_PUBLISHABLE_KEY: ${{ secrets.VITE_T3K_PUBLISHABLE_KEY }}
+  VITE_T3K_UPDATE_NOTICE: ${{ vars.VITE_T3K_UPDATE_NOTICE }}
+
+jobs:
+  windows-x64:
+    name: Windows x64 / ${{ inputs.build_type || 'Release' }}
+    runs-on: windows-latest
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Read version
+        shell: bash
+        run: echo "T3K_VERSION=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_ENV"
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install WebView2
+        shell: pwsh
+        run: pwsh -File script/install-webview2.ps1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            libs/juce
+            libs/r8brain-free-src
+            libs/soxr
+            libs/clap-juce-extensions
+          key: gp-edition-cmake-windows-${{ hashFiles('CMakeLists.txt', 'plugin/CMakeLists.txt') }}
+
+      # Configure once before npm so JUCE and the pinned converter DSP
+      # dependencies are present for the UI build and CMake can re-scan the
+      # generated webview assets afterwards.
+      - name: Configure CMake
+        shell: bash
+        run: >-
+          cmake -B build -S . -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          -DBUILD_AAX=OFF
+          -DBUILD_LV2=OFF
+          -DBUILD_CLAP=OFF
+
+      - name: Build web UI
+        shell: bash
+        run: |
+          cd ui
+          npm ci
+          npm run build
+          npm run lint
+
+      - name: Reconfigure after UI build
+        shell: bash
+        run: >-
+          cmake -B build -S . -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          -DBUILD_AAX=OFF
+          -DBUILD_LV2=OFF
+          -DBUILD_CLAP=OFF
+
+      - name: Build plugin and standalone
+        shell: bash
+        run: cmake --build build --config "${{ env.BUILD_TYPE }}" --parallel 2
+
+      - name: Run DSP and conversion-facing tests
+        shell: bash
+        run: ctest --test-dir build/test --output-on-failure
+
+      - name: Package unsigned artifacts
+        shell: pwsh
+        run: |
+          $root = "build/plugin/TONE3000_artefacts/${env:BUILD_TYPE}"
+          if (-not (Test-Path "$root/VST3")) { throw "VST3 artifact not found under $root" }
+          Compress-Archive -Path "$root/VST3", "$root/Standalone" `
+            -DestinationPath "TONE3000-GP-Edition-${env:T3K_VERSION}-windows.zip" -Force
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TONE3000-GP-Edition-${{ env.T3K_VERSION }}-windows
+          path: TONE3000-GP-Edition-${{ env.T3K_VERSION }}-windows.zip
+          if-no-files-found: error

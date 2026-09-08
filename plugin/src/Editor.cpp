@@ -349,6 +349,57 @@ void TONE3000Editor::pickLocalToneFile(
       });
 }
 
+void TONE3000Editor::pickConversionFile(
+    const juce::String& kind,
+    juce::WebBrowserComponent::NativeFunctionCompletion completion) {
+  auto cancelled = [] {
+    auto result = new juce::DynamicObject();
+    result->setProperty("cancelled", true);
+    return juce::var(result);
+  };
+
+  if (conversionFileChooser != nullptr) {
+    completion(cancelled());
+    return;
+  }
+
+  const bool output = kind == "output";
+  conversionFileChooser = std::make_unique<juce::FileChooser>(
+      output ? "Choose CLO output folder" : "Choose WAV file", juce::File{},
+      output ? juce::String("*") : juce::String("*.wav"));
+  const int flags = juce::FileBrowserComponent::openMode
+                  | (output ? juce::FileBrowserComponent::canSelectDirectories
+                            : juce::FileBrowserComponent::canSelectFiles);
+  juce::Component::SafePointer<TONE3000Editor> self(this);
+  conversionFileChooser->launchAsync(
+      flags, [self, kind, cancelled, completion = std::move(completion)](
+                 const juce::FileChooser& chooser) {
+        if (self == nullptr) return;
+        juce::MessageManager::callAsync([self] {
+          if (self != nullptr) self->conversionFileChooser.reset();
+        });
+#if JUCE_IOS
+        const auto urls = chooser.getURLResults();
+        if (urls.isEmpty()) {
+          completion(cancelled());
+          return;
+        }
+        const auto path = urls.getReference(0).getLocalFile().getFullPathName();
+#else
+        const auto files = chooser.getResults();
+        if (files.isEmpty()) {
+          completion(cancelled());
+          return;
+        }
+        const auto path = files.getReference(0).getFullPathName();
+#endif
+        auto result = new juce::DynamicObject();
+        result->setProperty("kind", kind);
+        result->setProperty("path", path);
+        completion(juce::var(result));
+      });
+}
+
 void TONE3000Editor::resized() {
   // Real pixels only, no transform. The webview handles devicePixelRatio
   // itself, and the page fits its design box to the actual viewport

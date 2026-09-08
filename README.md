@@ -21,6 +21,11 @@ install, load tones, and use it.
 - **Build a signal chain.** Multiple NAM and IR blocks, per-block EQ and
   gain/mix, drag to reorder, dual chains in stereo mode with branching,
   undo/redo, and presets.
+- **NAM → CLO conversion.** The download-arrow tab converts any loaded NAM
+  with the verified v2.10.1 flow, targeting GP-200 (B1024) or GP-5/GP-50
+  (B512), with optional recorded tail, Corrective IR, reference Tone Match,
+  and native WAV/folder pickers. See
+  [`docs/nam-to-clo-integration.md`](docs/nam-to-clo-integration.md).
 - **Cross-platform.** One plugin on macOS, Windows, and Linux. The UI is a
   React app rendered in a native WebView (WebView2 on Windows, WebKit
   elsewhere).
@@ -124,6 +129,16 @@ Re-run the same `cmake -B build ...` command from step 2 so CMake picks up
 ```sh
 cmake --build build
 ```
+
+### GitHub Actions
+
+`.github/workflows/build-gp-edition.yml` is a manually runnable Windows x64
+workflow (and runs for pull requests touching the integration). It checks out
+the NAM submodule, fetches the pinned r8brain/SoXR converter dependencies,
+builds the React UI, reconfigures CMake so the UI and stimulus are embedded,
+runs the DSP tests, and uploads an unsigned VST3/Standalone ZIP. Configure
+signing, notarization, or PACE as a separate protected job once the unsigned
+artifact is accepted.
 
 ### 5. Run it
 

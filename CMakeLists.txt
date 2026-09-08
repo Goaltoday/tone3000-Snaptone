@@ -66,6 +66,25 @@ CPMAddPackage(
     SOURCE_DIR ${LIB_DIR}/juce
 )
 
+# Dependencies used by the embedded NAM -> CLO converter.  Keep these pins in
+# the top-level CPM graph so the standalone plugin build and GitHub Actions use
+# exactly the same revisions.  r8brain is the historical CDSPResampler24 path
+# used by the verified converter; SoXR supplies the Ooura FFT4G C source.
+CPMAddPackage(
+    NAME T3K_R8BRAIN
+    GITHUB_REPOSITORY avaneev/r8brain-free-src
+    GIT_TAG version-3.7
+    SOURCE_DIR ${LIB_DIR}/r8brain-free-src
+    EXCLUDE_FROM_ALL YES
+)
+CPMAddPackage(
+    NAME T3K_SOXR
+    GITHUB_REPOSITORY chirlu/soxr
+    GIT_TAG 0.1.3
+    SOURCE_DIR ${LIB_DIR}/soxr
+    EXCLUDE_FROM_ALL YES
+)
+
 # The macOS WKWebView Web Inspector is no longer force-enabled at build time.
 # Debug builds get it from stock JUCE (gated on JUCE_DEBUG); release builds
 # expose it behind the Web Inspector toggle in Settings -> Diagnostics, applied

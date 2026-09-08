@@ -28,6 +28,7 @@
 #include "StereoOffset.h"
 #include "PresetManager.h"
 #include "TunerDetector.h"
+#include "ConversionManager.h"
 
 class TONE3000Processor;
 
@@ -200,6 +201,12 @@ public:
   // because the new TONE3000 model_url endpoints reject anonymous requests.
   void setAccessToken(const juce::String& token);
   juce::String getAccessToken() const;
+
+  // NAM -> CLO conversion exposed to the embedded Conversion tab. The
+  // processor snapshots the active NAM bytes under chainMutex, then the
+  // ConversionManager owns all work after this call returns.
+  juce::var startNamToClo(const juce::var& options);
+  juce::var getNamToCloStatus(const juce::String& jobId) const;
   
   // Background loading (called by thread pool jobs)
   void loadToneInBackground(const std::string& blockId, int firstModelId,
@@ -921,6 +928,9 @@ private:
   
   // Thread pool for background model loading
   juce::ThreadPool loadingThreadPool;
+  // Heavy NAM -> CLO jobs. Declared after loadingThreadPool so it is destroyed
+  // first and can safely join its worker before chain/model members disappear.
+  std::unique_ptr<ConversionManager> conversionManager;
 
   int maxBlockSize = 0;
   bool eqParamsDirty = true;

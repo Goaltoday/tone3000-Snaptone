@@ -1,6 +1,6 @@
 import React from 'react';
 import { rem } from '../hooks/useUiScale';
-import { Undo2, Redo2 } from './icons';
+import { Undo2, Redo2, Download } from './icons';
 import { AccountMenu } from './AccountMenu';
 import { IconButton } from './IconButton';
 import { PresetBar } from './PresetBar';
@@ -39,6 +39,8 @@ interface PluginHeaderProps {
   onStereoToggle: (enabled: boolean) => void;
   showTuner: boolean;
   onToggleTuner: (show: boolean) => void;
+  showConverter: boolean;
+  onToggleConverter: (show: boolean) => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -51,9 +53,9 @@ interface PluginHeaderProps {
 }
 
 /**
- * Full-width top bar: logo, preset controls, stereo toggle, tuner, undo/redo
- * and the account menu. Memoized because Plugin re-renders on every chain
- * poll tick while nothing up here changes.
+ * Full-width top bar: logo, preset controls, stereo toggle, tuner, NAM -> CLO
+ * conversion, undo/redo and the account menu. Memoized because Plugin
+ * re-renders on every chain poll tick while nothing up here changes.
  */
 export const PluginHeader = React.memo(function PluginHeader({
   presetStore,
@@ -64,6 +66,8 @@ export const PluginHeader = React.memo(function PluginHeader({
   onStereoToggle,
   showTuner,
   onToggleTuner,
+  showConverter,
+  onToggleConverter,
   canUndo,
   canRedo,
   onUndo,
@@ -119,6 +123,15 @@ export const PluginHeader = React.memo(function PluginHeader({
           size={28}
         >
           <TuningForkIcon size={18} />
+        </IconButton>
+        <IconButton
+          onClick={() => onToggleConverter(!showConverter)}
+          help="NAM a CLO"
+          active={showConverter}
+          fillWhenActive
+          size={28}
+        >
+          <Download size={18} />
         </IconButton>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16rem' }}>
           <IconButton onClick={onUndo} disabled={!canUndo} help={HELP.undo} size={28}>

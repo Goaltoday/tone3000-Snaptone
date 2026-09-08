@@ -31,6 +31,7 @@ TONE3000Processor::TONE3000Processor()
       // waiter (releaseChainEditFadeWhenLoadsSettle) never serializes the
       // very loads it is waiting on.
       loadingThreadPool(3) {
+  conversionManager = std::make_unique<ConversionManager>();
   // Attach the file logger first thing: state restore (and the background
   // model loads it queues) runs before prepareToPlay, and its diagnostics
   // used to vanish because the logger didn't exist yet.
@@ -347,6 +348,11 @@ TONE3000Processor::~TONE3000Processor() {
   for (const auto& paramId : presetParameterIds())
     parameters.removeParameterListener(paramId, this);
   cancelPendingUpdate();
+
+  // Join any conversion worker before tearing down the processor's logger or
+  // chain state. The worker owns a model-byte snapshot and never references
+  // this processor, but its final status still belongs to this instance.
+  conversionManager.reset();
 
   releaseResources();
 

@@ -171,6 +171,25 @@ juce::WebBrowserComponent::Options buildMainWebViewOptions(TONE3000Editor* edito
       .withOptionsFrom(editor->osFactorRelay)
       // --- Chain mutations -------------------------------------------------
       .withNativeFunction(
+          // Starts the embedded v2.10.1 NAM -> CLO conversion from a
+          // processor-owned snapshot of the selected NAM model.
+          "startNamToClo", guarded(1, juce::var(), [editor](const juce::Array<juce::var>& args) {
+            return editor->processor.startNamToClo(args[0]);
+          }))
+      .withNativeFunction(
+          "getNamToCloStatus", guarded(1, juce::var(), [editor](const juce::Array<juce::var>& args) {
+            return editor->processor.getNamToCloStatus(args[0].toString());
+          }))
+      .withNativeFunction(
+          // Native OS picker for a conversion WAV or output directory. The
+          // completion is intentionally asynchronous, like pickLocalToneFile.
+          "pickConversionFile",
+          [editor](const juce::Array<juce::var>& args,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion) {
+            const auto kind = args.size() >= 1 ? args[0].toString() : juce::String("output");
+            editor->pickConversionFile(kind, std::move(completion));
+          })
+      .withNativeFunction(
           // (toneJson, targetInsertId?): the tone lands in the insert slot
           // the user clicked; absent/stale ids fall back to the active
           // lane's first insert.

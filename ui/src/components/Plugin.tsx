@@ -25,6 +25,7 @@ import { TunerView } from './TunerView';
 import { OAuthOverlay } from './OAuthOverlay';
 import { ConnectionModal } from './ConnectionModal';
 import { ToneBrowser } from './ToneBrowser';
+import { ConversionPanel } from './ConversionPanel';
 import { UpdateNotice } from './UpdateNotice';
 import Settings, { type SettingsTab } from './Settings';
 import { T3K_API } from '../t3k/config';
@@ -36,6 +37,7 @@ export const Plugin: React.FC = () => {
   // Which tab Settings opens on; banner / gear land on System (setup first).
   const settingsTabRef = useRef<SettingsTab>('system');
   const [showTuner, setShowTuner] = useState(false);
+  const [showConverter, setShowConverter] = useState(false);
   // In-plugin tone browser takeover (streams of TONE3000 tones). Opened by
   // the + when already authenticated, or right after the no-prompt login
   // flow returns. Seeded true when we're returning from a browse-intent
@@ -133,11 +135,22 @@ export const Plugin: React.FC = () => {
   const handleToggleTuner = useCallback(
     async (show: boolean) => {
       setShowTuner(show);
+      if (show) setShowConverter(false);
       await setTunerEnabled(show);
     },
     [setTunerEnabled]
   );
   const closeTuner = useCallback(() => handleToggleTuner(false), [handleToggleTuner]);
+  const handleToggleConverter = useCallback(
+    (show: boolean) => {
+      setShowConverter(show);
+      if (show) {
+        if (showTuner) void handleToggleTuner(false);
+        setShowToneBrowser(false);
+      }
+    },
+    [handleToggleTuner, showTuner]
+  );
 
   // Top-bar actions whose effect lands on the main screen (stereo mode,
   // undo/redo, loading or saving a preset) leave the tuner first, so the
@@ -207,11 +220,12 @@ export const Plugin: React.FC = () => {
           loadFlow.clearPendingTargets();
           setShowToneBrowser(false);
         }
+        if (showConverter) setShowConverter(false);
         sessionStorage.removeItem(DETAIL_BLOCK_STORAGE_KEY);
         setReturnToGallery((n) => n + 1);
         return fn(...args);
       },
-    [showTuner, handleToggleTuner, showToneBrowser, loadFlow]
+    [showTuner, handleToggleTuner, showToneBrowser, showConverter, loadFlow]
   );
 
   const handleReset = useMemo(
@@ -232,7 +246,10 @@ export const Plugin: React.FC = () => {
     [presetStore, closeTunerThen, showChainThen]
   );
 
-  const openToneBrowser = useCallback(() => setShowToneBrowser(true), []);
+  const openToneBrowser = useCallback(() => {
+    setShowConverter(false);
+    setShowToneBrowser(true);
+  }, []);
 
   // TONE3000 session: API client, OAuth flows, signed-in identity, and
   // native's copy of the access token.
@@ -447,6 +464,8 @@ export const Plugin: React.FC = () => {
           onStereoToggle={handleStereoToggle}
           showTuner={showTuner}
           onToggleTuner={handleToggleTuner}
+          showConverter={showConverter}
+          onToggleConverter={handleToggleConverter}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={handleUndo}
@@ -511,7 +530,7 @@ export const Plugin: React.FC = () => {
                 // fills to both header and faceplate, putting those pads
                 // inside the scroll content instead.
                 paddingTop: fillToFaceplate ? 0 : 24,
-                paddingBottom: showToneBrowser || fillToFaceplate ? 0 : 24,
+                paddingBottom: showToneBrowser || showConverter || fillToFaceplate ? 0 : 24,
               }}
             >
               {showToneBrowser ? (
@@ -526,6 +545,12 @@ export const Plugin: React.FC = () => {
                   onBrowseTone3000={handleBrowseTone3000}
                   onSignIn={handleBrowserSignIn}
                   onClose={handleBrowserClose}
+                />
+              ) : showConverter ? (
+                <ConversionPanel
+                  chain={chain}
+                  chainRight={stereoEnabled ? (chainRight ?? []) : null}
+                  onClose={() => setShowConverter(false)}
                 />
               ) : (
                 <ChainActionsProvider value={chainActions}>
