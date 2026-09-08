@@ -331,6 +331,8 @@ if (EXISTS "${LIB_DIR}/r8brain-free-src/r8bbase.cpp")
     add_library(t3k_r8brain_base OBJECT "${LIB_DIR}/r8brain-free-src/r8bbase.cpp")
     target_include_directories(t3k_r8brain_base PRIVATE "${LIB_DIR}/r8brain-free-src")
     target_compile_options(t3k_r8brain_base PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W0>)
+    # The object files are linked into shared plugin binaries on Unix.
+    set_target_properties(t3k_r8brain_base PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_sources(${PROJECT_NAME} PRIVATE $<TARGET_OBJECTS:t3k_r8brain_base>)
 endif()
 if (EXISTS "${LIB_DIR}/soxr/src/fft4g.c")

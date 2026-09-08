@@ -75,6 +75,9 @@ CPMAddPackage(
     GITHUB_REPOSITORY avaneev/r8brain-free-src
     GIT_TAG version-3.7
     SOURCE_DIR ${LIB_DIR}/r8brain-free-src
+    # Header/source-only dependency for this project. Do not configure the
+    # upstream project; plugin/CMakeLists.txt builds r8bbase.cpp directly.
+    DOWNLOAD_ONLY YES
     EXCLUDE_FROM_ALL YES
 )
 CPMAddPackage(
@@ -82,6 +85,9 @@ CPMAddPackage(
     GITHUB_REPOSITORY chirlu/soxr
     GIT_TAG 0.1.3
     SOURCE_DIR ${LIB_DIR}/soxr
+    # Only src/fft4g.c is used. SoXR 0.1.3 declares an obsolete CMake
+    # compatibility level that CMake 4 rejects if it is added as a subproject.
+    DOWNLOAD_ONLY YES
     EXCLUDE_FROM_ALL YES
 )
 
