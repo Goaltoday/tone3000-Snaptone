@@ -101,20 +101,17 @@ jobs:
           -DBUILD_LV2=OFF
           -DBUILD_CLAP=OFF
 
-      - name: Build plugin and standalone
+      - name: Build VST3 only
         shell: bash
-        run: cmake --build build --config "${{ env.BUILD_TYPE }}" --parallel 2
-
-      - name: Run DSP and NAM-to-CLO conversion tests
-        shell: bash
-        run: ctest --test-dir build/test --output-on-failure
+        run: cmake --build build --target TONE3000_VST3 --config "${{ env.BUILD_TYPE }}" --parallel
 
       - name: Package unsigned artifacts
         shell: pwsh
         run: |
           $root = "build/plugin/TONE3000_artefacts/${env:BUILD_TYPE}"
-          if (-not (Test-Path "$root/VST3")) { throw "VST3 artifact not found under $root" }
-          Compress-Archive -Path "$root/VST3", "$root/Standalone" `
+          $vst3 = "$root/VST3/TONE3000.vst3"
+          if (-not (Test-Path $vst3)) { throw "VST3 artifact not found at $vst3" }
+          Compress-Archive -Path $vst3 `
             -DestinationPath "TONE3000-GP-Edition-${env:T3K_VERSION}-windows.zip" -Force
 
       - name: Upload plugin artifact

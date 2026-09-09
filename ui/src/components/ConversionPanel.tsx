@@ -50,6 +50,14 @@ const fieldStyle: React.CSSProperties = {
   fontSize: '13rem',
 };
 
+// WebView2 renders an opened native <select> with a white Windows popup even
+// though the closed control uses the plugin's dark theme. Set the popup rows
+// explicitly so their text cannot inherit WHITE and disappear.
+const optionStyle: React.CSSProperties = {
+  backgroundColor: '#ffffff',
+  color: '#000000',
+};
+
 const captionStyle: React.CSSProperties = {
   color: MUTED,
   fontSize: '12rem',
@@ -242,17 +250,17 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
           <div style={{ fontSize: '14rem', fontWeight: 600, marginBottom: '10rem' }}>Modelo y destino</div>
           <label style={{ display: 'block', fontSize: '12rem', color: MUTED, marginBottom: '5rem' }}>NAM cargado en la cadena</label>
           <select value={selectedBlockId} onChange={(event) => setSelectedBlockId(event.target.value)} style={fieldStyle} disabled={running || namBlocks.length === 0}>
-            {namBlocks.length === 0 && <option value="">No hay NAM cargados</option>}
+            {namBlocks.length === 0 && <option style={optionStyle} value="">No hay NAM cargados</option>}
             {namBlocks.map(({ block, side }) => (
-              <option key={block.blockId} value={block.blockId}>{side} · {block.tone.title}{block.loaded ? '' : ' (cargando)'}</option>
+              <option style={optionStyle} key={block.blockId} value={block.blockId}>{side} · {block.tone.title}{block.loaded ? '' : ' (cargando)'}</option>
             ))}
           </select>
           <p style={captionStyle}>Se usan los bytes del modelo que ya está cargado; no se realiza una descarga adicional.</p>
 
           <label style={{ display: 'block', fontSize: '12rem', color: MUTED, margin: '14rem 0 5rem' }}>Destino</label>
           <select value={destination} onChange={(event) => setDestination(event.target.value as 'gp200' | 'gp5')} style={fieldStyle} disabled={running}>
-            <option value="gp200">GP-200 · B1024</option>
-            <option value="gp5">GP-5 / GP-50 · B512</option>
+            <option style={optionStyle} value="gp200">GP-200 · B1024</option>
+            <option style={optionStyle} value="gp5">GP-5 / GP-50 · B512</option>
           </select>
           <p style={captionStyle}>Flujo: B2048 → Corrective IR opcional → reducción → Tone Match directo final.</p>
         </section>
@@ -261,8 +269,8 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
           <div style={{ fontSize: '14rem', fontWeight: 600, marginBottom: '10rem' }}>Estímulo y opciones</div>
           <label style={{ display: 'block', fontSize: '12rem', color: MUTED, marginBottom: '5rem' }}>Cola de 20 segundos</label>
           <select value={tailMode} onChange={(event) => setTailMode(event.target.value as 'original' | 'recorded')} style={fieldStyle} disabled={running}>
-            <option value="original">Audio de estímulo original</option>
-            <option value="recorded">Audio grabado/reamp</option>
+            <option style={optionStyle} value="original">Audio de estímulo original</option>
+            <option style={optionStyle} value="recorded">Audio grabado/reamp</option>
           </select>
           {tailMode === 'recorded' && (
             <div style={{ display: 'flex', gap: '8rem', marginTop: '7rem' }}>
@@ -286,8 +294,8 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
                 style={fieldStyle}
                 disabled={running}
               >
-                <option value="loaded">IR cargado en el plugin</option>
-                <option value="external">WAV externo</option>
+                <option style={optionStyle} value="loaded">IR cargado en el plugin</option>
+                <option style={optionStyle} value="external">WAV externo</option>
               </select>
               {correctiveIrSource === 'loaded' ? (
                 <>
@@ -297,12 +305,12 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
                     style={{ ...fieldStyle, marginTop: '7rem' }}
                     disabled={running || irBlocks.length === 0}
                   >
-                    {irBlocks.length === 0 && <option value="">No hay IR cargados</option>}
+                    {irBlocks.length === 0 && <option style={optionStyle} value="">No hay IR cargados</option>}
                     {irBlocks.map(({ block, side }) => {
                       const modelName = block.tone.models.find((model) => model.id === block.activeModelId)?.name;
                       const loading = block.modelLoading || !block.loaded;
                       return (
-                        <option key={block.blockId} value={block.blockId}>
+                        <option style={optionStyle} key={block.blockId} value={block.blockId}>
                           {side} · {block.tone.title}{modelName ? ` · ${modelName}` : ''}{loading ? ' (cargando)' : ''}
                         </option>
                       );
@@ -322,8 +330,8 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
           <label style={{ display: 'block', fontSize: '12rem', color: MUTED, margin: '14rem 0 5rem' }}>Referencia opcional de Tone Match</label>
           <div style={{ display: 'flex', gap: '8rem' }}>
             <select value={referenceWav} onChange={(event) => setReferenceWav(event.target.value)} style={{ ...fieldStyle, flex: 1 }} disabled={running}>
-              <option value="">Original de conversión</option>
-              {referenceFiles.map((file) => <option key={file.path} value={file.path}>{file.name}</option>)}
+              <option style={optionStyle} value="">Original de conversión</option>
+              {referenceFiles.map((file) => <option style={optionStyle} key={file.path} value={file.path}>{file.name}</option>)}
             </select>
             <button type="button" style={buttonStyle} onClick={() => void refreshReferences()} disabled={running} title="Actualizar lista de WAV">
               <RotateCcw size={15} /> Actualizar
