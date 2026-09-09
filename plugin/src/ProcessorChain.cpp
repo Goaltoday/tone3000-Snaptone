@@ -1710,6 +1710,11 @@ juce::var conversionObject(std::initializer_list<std::pair<const char*, juce::va
   return juce::var(object);
 }
 
+juce::File conversionReferenceDirectory() {
+  return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+      .getChildFile("TONE3000 CLO");
+}
+
 }  // namespace
 
 juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
@@ -1719,19 +1724,25 @@ juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
 #else
   auto* object = options.getDynamicObject();
   const auto blockId = optionString(object, "blockId").toStdString();
+  const bool correctiveIrEnabled = optionBool(object, "correctiveIrEnabled");
+  const auto correctiveIrSource = optionString(object, "correctiveIrSource").toLowerCase();
+  const auto correctiveIrBlockId = optionString(object, "correctiveIrBlockId").toStdString();
   ConversionManager::Request request;
+  request.correctiveIrEnabled = correctiveIrEnabled;
 
   {
     juce::ScopedLock lock(chainMutex);
     ChainBlock* selected = nullptr;
+    ChainBlock* selectedIr = nullptr;
     for (auto& laneBlocks : lanes) {
       for (auto& candidate : laneBlocks) {
         if (candidate != nullptr && candidate->id == blockId) {
           selected = candidate.get();
-          break;
         }
+        if (correctiveIrEnabled && correctiveIrSource == "loaded"
+            && candidate != nullptr && candidate->id == correctiveIrBlockId)
+          selectedIr = candidate.get();
       }
-      if (selected != nullptr) break;
     }
     if (selected == nullptr || selected->type != ChainBlockType::NAM)
       return conversionObject({{"error", "Select a NAM block from the chain."}});
@@ -1748,6 +1759,18 @@ juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
         request.modelName = tone->getProperty("title").toString();
     }
     if (request.modelName.isEmpty()) request.modelName = "TONE3000-model";
+
+    if (correctiveIrEnabled && correctiveIrSource == "loaded") {
+      if (selectedIr == nullptr || selectedIr->type != ChainBlockType::IR)
+        return conversionObject({{"error", "Select a loaded IR block for Corrective IR."}});
+      if (!selectedIr->loaded || selectedIr->modelLoading)
+        return conversionObject({{"error", "Wait until the selected Corrective IR has finished loading."}});
+      const auto irCache = selectedIr->modelCache.find(selectedIr->activeModelId);
+      if (irCache == selectedIr->modelCache.end() || irCache->second == nullptr
+          || irCache->second->empty())
+        return conversionObject({{"error", "The selected Corrective IR bytes are not available."}});
+      request.correctiveIrBytes = irCache->second;
+    }
   }
 
   const auto destination = optionString(object, "destination").toLowerCase();
@@ -1758,7 +1781,18 @@ juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
   request.correctiveIr = optionString(object, "correctiveIr");
   request.referenceWav = optionString(object, "referenceWav");
   request.outputDirectory = optionString(object, "outputDirectory");
-  request.correctiveIrEnabled = optionBool(object, "correctiveIrEnabled");
+
+  if (correctiveIrEnabled && correctiveIrSource != "loaded" && request.correctiveIr.isEmpty())
+    return conversionObject({{"error", "Select an external Corrective IR WAV file."}});
+
+  if (request.referenceWav.isNotEmpty()) {
+    const juce::File referenceFile(request.referenceWav);
+    const auto referenceDirectory = conversionReferenceDirectory();
+    if (!referenceFile.existsAsFile()
+        || !referenceFile.hasFileExtension("wav")
+        || referenceFile.getParentDirectory() != referenceDirectory)
+      return conversionObject({{"error", "Tone Match reference must be a WAV in Documents/TONE3000 CLO."}});
+  }
 
   // The official nam_input_wav.wav is embedded in WebAssets. Hand its stable
   // BinaryData view to the worker, which writes a private temporary copy;
@@ -1779,6 +1813,27 @@ juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
     return conversionObject({{"error", "The conversion service is unavailable."}});
   return conversionManager->start(std::move(request));
 #endif
+}
+
+juce::var TONE3000Processor::listNamToCloReferences() const {
+  auto result = new juce::DynamicObject();
+  const auto directory = conversionReferenceDirectory();
+  result->setProperty("directory", directory.getFullPathName());
+  juce::Array<juce::var> entries;
+#if !HEADLESS
+  auto files = directory.findChildFiles(juce::File::findFiles, false, "*.wav");
+  std::sort(files.begin(), files.end(), [](const juce::File& a, const juce::File& b) {
+    return a.getFileName().compareNatural(b.getFileName(), true) < 0;
+  });
+  for (const auto& file : files) {
+    auto entry = new juce::DynamicObject();
+    entry->setProperty("name", file.getFileName());
+    entry->setProperty("path", file.getFullPathName());
+    entries.add(juce::var(entry));
+  }
+#endif
+  result->setProperty("files", juce::var(entries));
+  return juce::var(result);
 }
 
 juce::var TONE3000Processor::getNamToCloStatus(const juce::String& jobId) const {

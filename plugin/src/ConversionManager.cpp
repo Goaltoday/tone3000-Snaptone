@@ -63,6 +63,7 @@ public:
       DirectoryCleanup cleanup(rootPath);
       const auto inputPath = rootPath / (ConversionManager::sanitiseStem(request.modelName) + ".nam");
       const auto stimulusPath = rootPath / "nam_input_wav.wav";
+      const auto embeddedCorrectiveIrPath = rootPath / "corrective_ir.wav";
       const auto outputPath = ConversionManager::toPath(request.outputDirectory);
       std::filesystem::create_directories(rootPath, ec);
       if (ec) return fail("Cannot create conversion work directory: " + ec.message());
@@ -98,6 +99,15 @@ public:
       ntc::CorrectiveIrConfig correction;
       correction.enabled = request.correctiveIrEnabled;
       correction.wav = ConversionManager::toPath(request.correctiveIr);
+      if (correction.enabled && request.correctiveIrBytes != nullptr) {
+        if (request.correctiveIrBytes->empty())
+          return fail("The selected Corrective IR bytes are empty.");
+        if (!ntc::writeFileBytes(embeddedCorrectiveIrPath,
+                                 request.correctiveIrBytes->data(),
+                                 request.correctiveIrBytes->size(), error))
+          return fail(error);
+        correction.wav = embeddedCorrectiveIrPath;
+      }
 
       ntc::CloRefineConfig refine;
       refine.destination = request.destination;

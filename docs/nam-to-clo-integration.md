@@ -17,6 +17,17 @@ separado del audio.
 6. Se exporta el candidato final sin confianza espectral, sin selección de
    candidatos y sin suavizado del 5 %.
 
+## Fuentes integradas de audio
+
+- Al activar Corrective IR se puede elegir un bloque IR cargado en cualquiera
+  de las dos cadenas. Se usa el WAV original del modelo activo, sin ganancias,
+  mezcla, EQ ni otros bloques; también permanece disponible un WAV externo.
+- La referencia de Tone Match ofrece `Original de conversión` o los WAV del
+  primer nivel de `Documentos/TONE3000 CLO`. El botón `Actualizar` vuelve a
+  leer la carpeta sin cerrar la pestaña.
+- Los bytes de un IR cargado se mantienen mediante una referencia inmutable y
+  el worker crea su copia temporal, por lo que no hay descarga adicional.
+
 El estímulo oficial `nam_input_wav.wav` se compila como `BinaryData`. El worker
 crea una copia privada dentro de la carpeta temporal de cada trabajo; así no
 se bloquea la interfaz escribiendo el WAV ni se reutiliza una caché dañada.
@@ -28,7 +39,8 @@ se bloquea la interfaz escribiendo el WAV ni se reutiliza una caché dañada.
 - `plugin/src/ProcessorChain.cpp`: referencia inmutable O(1) a los bytes del
   modelo, opciones y acceso al estímulo embebido.
 - `plugin/src/EditorWebViewSetup.cpp`: funciones nativas
-  `startNamToClo`, `getNamToCloStatus` y `pickConversionFile`.
+  `startNamToClo`, `getNamToCloStatus`, `listNamToCloReferences` y
+  `pickConversionFile`.
 - `plugin/src/Editor.cpp` / `plugin/include/Editor.h`: selectores nativos de
   WAV y carpeta de salida.
 - `ui/src/components/ConversionPanel.tsx`: pestaña, polling que termina al

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Download, X as XIcon, FolderClosed, File } from './icons';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Download, X as XIcon, FolderClosed, File, RotateCcw } from './icons';
 import { useNativeFunction } from '../hooks/useFunction';
 import type { ChainItem, ToneBlock } from '../types/chain';
 import { FIELD_BORDER, outlinedFieldStyle, PillToggle } from './controls';
@@ -18,6 +18,10 @@ type ConversionStatus = {
 };
 
 type PickResult = { kind?: string; path?: string; cancelled?: boolean };
+type ReferenceListResult = {
+  directory?: string;
+  files?: { name?: string; path?: string }[];
+};
 
 interface ConversionPanelProps {
   chain: ChainItem[];
@@ -57,9 +61,16 @@ function isNam(block: ChainItem): block is ToneBlock {
   return block.kind === 'tone' && block.tone.format?.toLowerCase() === 'nam';
 }
 
+function isIr(block: ChainItem): block is ToneBlock {
+  if (block.kind !== 'tone') return false;
+  const format = block.tone.format?.toLowerCase();
+  return Boolean(format) && format !== 'nam';
+}
+
 export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRight, onClose }) => {
   const nativeStart = useNativeFunction<{ jobId?: string; error?: string }>('startNamToClo');
   const nativeStatus = useNativeFunction<ConversionStatus>('getNamToCloStatus');
+  const nativeReferences = useNativeFunction<ReferenceListResult>('listNamToCloReferences');
   const pickFile = useNativeFunction<PickResult>('pickConversionFile');
 
   const namBlocks = useMemo(
@@ -69,13 +80,24 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
     ],
     [chain, chainRight]
   );
+  const irBlocks = useMemo(
+    () => [
+      ...chain.filter(isIr).map((block) => ({ block, side: 'Left' })),
+      ...(chainRight ?? []).filter(isIr).map((block) => ({ block, side: 'Right' })),
+    ],
+    [chain, chainRight]
+  );
   const [selectedBlockId, setSelectedBlockId] = useState('');
   const [destination, setDestination] = useState<'gp200' | 'gp5'>('gp200');
   const [tailMode, setTailMode] = useState<'original' | 'recorded'>('original');
   const [recordedAudio, setRecordedAudio] = useState('');
   const [correctiveIrEnabled, setCorrectiveIrEnabled] = useState(false);
+  const [correctiveIrSource, setCorrectiveIrSource] = useState<'loaded' | 'external'>('loaded');
+  const [correctiveIrBlockId, setCorrectiveIrBlockId] = useState('');
   const [correctiveIr, setCorrectiveIr] = useState('');
   const [referenceWav, setReferenceWav] = useState('');
+  const [referenceDirectory, setReferenceDirectory] = useState('Documentos/TONE3000 CLO');
+  const [referenceFiles, setReferenceFiles] = useState<{ name: string; path: string }[]>([]);
   const [outputDirectory, setOutputDirectory] = useState('');
   const [jobId, setJobId] = useState('');
   const [status, setStatus] = useState<ConversionStatus | null>(null);
@@ -86,6 +108,28 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
     if (selectedBlockId && !namBlocks.some(({ block }) => block.blockId === selectedBlockId))
       setSelectedBlockId(namBlocks[0]?.block.blockId ?? '');
   }, [namBlocks, selectedBlockId]);
+
+  useEffect(() => {
+    if (!correctiveIrBlockId && irBlocks.length > 0)
+      setCorrectiveIrBlockId(irBlocks[0].block.blockId);
+    if (correctiveIrBlockId && !irBlocks.some(({ block }) => block.blockId === correctiveIrBlockId))
+      setCorrectiveIrBlockId(irBlocks[0]?.block.blockId ?? '');
+  }, [correctiveIrBlockId, irBlocks]);
+
+  const refreshReferences = useCallback(async () => {
+    const result = await nativeReferences();
+    if (!result) return;
+    const files = (result.files ?? []).flatMap((file) =>
+      file.name && file.path ? [{ name: file.name, path: file.path }] : []
+    );
+    setReferenceDirectory(result.directory || 'Documentos/TONE3000 CLO');
+    setReferenceFiles(files);
+    setReferenceWav((current) => current && !files.some((file) => file.path === current) ? '' : current);
+  }, [nativeReferences]);
+
+  useEffect(() => {
+    void refreshReferences();
+  }, [refreshReferences]);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,20 +161,24 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
   }, [jobId, nativeStatus]);
 
   const selected = namBlocks.find(({ block }) => block.blockId === selectedBlockId)?.block;
+  const selectedIr = irBlocks.find(({ block }) => block.blockId === correctiveIrBlockId)?.block;
   const running = status?.running === true;
+  const correctiveReady = !correctiveIrEnabled
+    || (correctiveIrSource === 'loaded'
+      ? Boolean(selectedIr?.loaded && !selectedIr.modelLoading)
+      : Boolean(correctiveIr));
 
-  const choose = async (kind: 'recorded' | 'correctiveIr' | 'reference' | 'output') => {
+  const choose = async (kind: 'recorded' | 'correctiveIr' | 'output') => {
     const result = await pickFile(kind);
     if (!result?.cancelled && result?.path) {
       if (kind === 'recorded') setRecordedAudio(result.path);
       else if (kind === 'correctiveIr') setCorrectiveIr(result.path);
-      else if (kind === 'reference') setReferenceWav(result.path);
       else setOutputDirectory(result.path);
     }
   };
 
   const start = async () => {
-    if (!selected || !selected.loaded || running) return;
+    if (!selected || !selected.loaded || !correctiveReady || running) return;
     setError('');
     setStatus(null);
     const result = await nativeStart({
@@ -140,6 +188,8 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
       tailMode: tailMode === 'recorded' ? 'recorded' : 'original',
       recordedAudio,
       correctiveIrEnabled,
+      correctiveIrSource,
+      correctiveIrBlockId,
       correctiveIr,
       referenceWav,
       outputDirectory,
@@ -229,17 +279,57 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
             <PillToggle value={correctiveIrEnabled} onChange={setCorrectiveIrEnabled} disabled={running} />
           </div>
           {correctiveIrEnabled && (
-            <div style={{ display: 'flex', gap: '8rem', marginTop: '7rem' }}>
-              <input readOnly value={correctiveIr} placeholder="Selecciona un WAV" style={{ ...fieldStyle, flex: 1 }} />
-              <button type="button" style={buttonStyle} onClick={() => void choose('correctiveIr')} disabled={running}><File size={15} /> IR</button>
+            <div style={{ marginTop: '7rem' }}>
+              <select
+                value={correctiveIrSource}
+                onChange={(event) => setCorrectiveIrSource(event.target.value as 'loaded' | 'external')}
+                style={fieldStyle}
+                disabled={running}
+              >
+                <option value="loaded">IR cargado en el plugin</option>
+                <option value="external">WAV externo</option>
+              </select>
+              {correctiveIrSource === 'loaded' ? (
+                <>
+                  <select
+                    value={correctiveIrBlockId}
+                    onChange={(event) => setCorrectiveIrBlockId(event.target.value)}
+                    style={{ ...fieldStyle, marginTop: '7rem' }}
+                    disabled={running || irBlocks.length === 0}
+                  >
+                    {irBlocks.length === 0 && <option value="">No hay IR cargados</option>}
+                    {irBlocks.map(({ block, side }) => {
+                      const modelName = block.tone.models.find((model) => model.id === block.activeModelId)?.name;
+                      const loading = block.modelLoading || !block.loaded;
+                      return (
+                        <option key={block.blockId} value={block.blockId}>
+                          {side} · {block.tone.title}{modelName ? ` · ${modelName}` : ''}{loading ? ' (cargando)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {irBlocks.length === 0 && <p style={captionStyle}>Carga primero un IR en cualquier slot o selecciona WAV externo.</p>}
+                </>
+              ) : (
+                <div style={{ display: 'flex', gap: '8rem', marginTop: '7rem' }}>
+                  <input readOnly value={correctiveIr} placeholder="Selecciona un WAV" style={{ ...fieldStyle, flex: 1 }} />
+                  <button type="button" style={buttonStyle} onClick={() => void choose('correctiveIr')} disabled={running}><File size={15} /> IR</button>
+                </div>
+              )}
             </div>
           )}
 
           <label style={{ display: 'block', fontSize: '12rem', color: MUTED, margin: '14rem 0 5rem' }}>Referencia opcional de Tone Match</label>
           <div style={{ display: 'flex', gap: '8rem' }}>
-            <input readOnly value={referenceWav} placeholder="Original de 70 s si se deja vacío" style={{ ...fieldStyle, flex: 1 }} />
-            <button type="button" style={buttonStyle} onClick={() => void choose('reference')} disabled={running}><File size={15} /> WAV</button>
+            <select value={referenceWav} onChange={(event) => setReferenceWav(event.target.value)} style={{ ...fieldStyle, flex: 1 }} disabled={running}>
+              <option value="">Original de conversión</option>
+              {referenceFiles.map((file) => <option key={file.path} value={file.path}>{file.name}</option>)}
+            </select>
+            <button type="button" style={buttonStyle} onClick={() => void refreshReferences()} disabled={running} title="Actualizar lista de WAV">
+              <RotateCcw size={15} /> Actualizar
+            </button>
           </div>
+          <p style={{ ...captionStyle, wordBreak: 'break-all' }}>WAV disponibles en {referenceDirectory}</p>
         </section>
       </div>
 
@@ -266,7 +356,7 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10rem', marginTop: '16rem' }}>
         <button type="button" style={{ ...buttonStyle, borderColor: SUBTLE, color: MUTED }} onClick={onClose}>Cerrar</button>
-        <button type="button" style={{ ...buttonStyle, background: WHITE, color: '#000000' }} onClick={() => void start()} disabled={!selected || !selected.loaded || running}>
+        <button type="button" style={{ ...buttonStyle, background: WHITE, color: '#000000' }} onClick={() => void start()} disabled={!selected || !selected.loaded || !correctiveReady || running}>
           {running ? 'Convirtiendo…' : 'Convertir NAM a CLO'}
         </button>
       </div>

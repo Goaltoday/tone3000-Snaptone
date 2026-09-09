@@ -209,6 +209,9 @@ public:
   // ConversionManager owns all work after this call returns.
   juce::var startNamToClo(const juce::var& options);
   juce::var getNamToCloStatus(const juce::String& jobId) const;
+  /** Returns { directory, files: [{ name, path }] } for top-level WAV files
+      in Documents/TONE3000 CLO, used by the Tone Match reference selector. */
+  juce::var listNamToCloReferences() const;
   
   // Background loading (called by thread pool jobs)
   void loadToneInBackground(const std::string& blockId, int firstModelId,

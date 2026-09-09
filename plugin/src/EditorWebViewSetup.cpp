@@ -181,6 +181,10 @@ juce::WebBrowserComponent::Options buildMainWebViewOptions(TONE3000Editor* edito
             return editor->processor.getNamToCloStatus(args[0].toString());
           }))
       .withNativeFunction(
+          "listNamToCloReferences", guarded(0, juce::var(), [editor](const juce::Array<juce::var>&) {
+            return editor->processor.listNamToCloReferences();
+          }))
+      .withNativeFunction(
           // Native OS picker for a conversion WAV or output directory. The
           // completion is intentionally asynchronous, like pickLocalToneFile.
           "pickConversionFile",

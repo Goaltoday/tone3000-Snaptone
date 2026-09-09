@@ -25,6 +25,7 @@ class ConversionManager {
 public:
   struct Request {
     std::shared_ptr<const std::vector<std::uint8_t>> namBytes;
+    std::shared_ptr<const std::vector<std::uint8_t>> correctiveIrBytes;
     juce::String modelName;
     const void* originalStimulusData = nullptr;
     std::size_t originalStimulusSize = 0;
