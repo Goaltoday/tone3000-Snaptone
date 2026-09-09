@@ -114,14 +114,22 @@ export const captionStyle: React.CSSProperties = {
 
 /** Green pill switch mirroring the web ToggleSimple: 40×24 track (zinc-500
     off, #00D13B on), 16px white knob with a 4px inset, 300ms ease. */
-export const PillToggle: React.FC<{ value: boolean; onChange: (value: boolean) => void }> = ({
+export const PillToggle: React.FC<{
+  value: boolean;
+  onChange: (value: boolean) => void;
+  disabled?: boolean;
+}> = ({
   value,
   onChange,
+  disabled = false,
 }) => (
   <button
     role="switch"
     aria-checked={value}
-    onClick={() => onChange(!value)}
+    disabled={disabled}
+    onClick={() => {
+      if (!disabled) onChange(!value);
+    }}
     style={{
       position: 'relative',
       width: '40rem',
@@ -129,7 +137,8 @@ export const PillToggle: React.FC<{ value: boolean; onChange: (value: boolean) =
       borderRadius: '12rem',
       border: 'none',
       padding: 0,
-      cursor: 'pointer',
+      cursor: disabled ? 'default' : 'pointer',
+      opacity: disabled ? 0.55 : 1,
       backgroundColor: value ? '#00D13B' : '#71717a',
       boxShadow: 'inset 0 2rem 4rem rgba(0, 0, 0, 0.15)',
       flexShrink: 0,

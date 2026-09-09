@@ -28,7 +28,9 @@
 #include "StereoOffset.h"
 #include "PresetManager.h"
 #include "TunerDetector.h"
+#if !HEADLESS
 #include "ConversionManager.h"
+#endif
 
 class TONE3000Processor;
 
@@ -724,7 +726,7 @@ private:
   // like duplicate. Guarded by chainMutex; in-memory only (deliberately not
   // part of the DAW session state).
   juce::ValueTree blockClipboardSettings;
-  std::map<int, std::vector<uint8_t>> blockClipboardModelCache;
+  ChainBlock::ModelCache blockClipboardModelCache;
 
   // MIDI performance handlers (wired to midiMapper in the constructor,
   // both invoked on the message thread).
@@ -930,7 +932,9 @@ private:
   juce::ThreadPool loadingThreadPool;
   // Heavy NAM -> CLO jobs. Declared after loadingThreadPool so it is destroyed
   // first and can safely join its worker before chain/model members disappear.
+#if !HEADLESS
   std::unique_ptr<ConversionManager> conversionManager;
+#endif
 
   int maxBlockSize = 0;
   bool eqParamsDirty = true;

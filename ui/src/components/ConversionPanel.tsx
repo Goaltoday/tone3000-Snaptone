@@ -88,17 +88,31 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
   }, [namBlocks, selectedBlockId]);
 
   useEffect(() => {
-    if (!jobId) return;
     let cancelled = false;
-    const poll = async () => {
-      const result = await nativeStatus(jobId);
-      if (!cancelled && result) setStatus(result);
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), 650);
+    void nativeStatus('').then((result) => {
+      if (cancelled || !result?.jobId) return;
+      setJobId(result.jobId);
+      setStatus(result);
+    });
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+    };
+  }, [nativeStatus]);
+
+  useEffect(() => {
+    if (!jobId) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      const result = await nativeStatus(jobId);
+      if (cancelled) return;
+      if (result) setStatus(result);
+      if (!result?.done) timer = window.setTimeout(() => void poll(), 650);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [jobId, nativeStatus]);
 
@@ -132,11 +146,11 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
     });
     if (!result) {
       setError('No se pudo iniciar la conversión.');
-    } else if (result.error) {
-      setError(result.error);
     } else if (result.jobId) {
       setJobId(result.jobId);
       setStatus({ jobId: result.jobId, phase: 'queued', running: true, done: false });
+    } else if (result.error) {
+      setError(result.error);
     }
   };
 
@@ -144,6 +158,8 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
     ? 'Conversión terminada.'
     : status?.phase === 'failed'
       ? status.error || 'La conversión ha fallado.'
+      : status?.phase === 'cancelled'
+        ? 'Conversión cancelada.'
       : status?.phase || 'Listo';
 
   return (
@@ -210,7 +226,7 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
               <div style={{ fontSize: '13rem' }}>Corrective IR</div>
               <p style={captionStyle}>Se aplica sobre B2048 antes del Tone Match.</p>
             </div>
-            <PillToggle value={correctiveIrEnabled} onChange={setCorrectiveIrEnabled} />
+            <PillToggle value={correctiveIrEnabled} onChange={setCorrectiveIrEnabled} disabled={running} />
           </div>
           {correctiveIrEnabled && (
             <div style={{ display: 'flex', gap: '8rem', marginTop: '7rem' }}>
@@ -241,7 +257,7 @@ export const ConversionPanel: React.FC<ConversionPanelProps> = ({ chain, chainRi
       {(error || status) && (
         <div style={{ border: `1rem solid ${status?.ok ? '#2d8a4a' : status?.done ? '#a33' : '#3f3f46'}`, borderRadius: '8rem', padding: '12rem 14rem', marginTop: '14rem' }}>
           <div style={{ fontSize: '13rem' }}>{error || statusText}</div>
-          {status?.finalRmseDb !== undefined && Number.isFinite(status.finalRmseDb) && (
+          {status?.done && status.ok && status.finalRmseDb !== undefined && Number.isFinite(status.finalRmseDb) && (
             <div style={{ ...captionStyle, marginTop: '6rem' }}>RMSE Tone Match final: {status.finalRmseDb.toFixed(3)} dB</div>
           )}
           {status?.outputPath && <div style={{ ...captionStyle, marginTop: '4rem', wordBreak: 'break-all' }}>{status.outputPath}</div>}

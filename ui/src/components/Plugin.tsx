@@ -141,16 +141,6 @@ export const Plugin: React.FC = () => {
     [setTunerEnabled]
   );
   const closeTuner = useCallback(() => handleToggleTuner(false), [handleToggleTuner]);
-  const handleToggleConverter = useCallback(
-    (show: boolean) => {
-      setShowConverter(show);
-      if (show) {
-        if (showTuner) void handleToggleTuner(false);
-        setShowToneBrowser(false);
-      }
-    },
-    [handleToggleTuner, showTuner]
-  );
 
   // Top-bar actions whose effect lands on the main screen (stereo mode,
   // undo/redo, loading or saving a preset) leave the tuner first, so the
@@ -208,6 +198,18 @@ export const Plugin: React.FC = () => {
     requireConnection,
     setShowToneBrowser,
   });
+
+  const handleToggleConverter = useCallback(
+    (show: boolean) => {
+      setShowConverter(show);
+      if (show) {
+        if (showTuner) void handleToggleTuner(false);
+        loadFlow.clearPendingTargets();
+        setShowToneBrowser(false);
+      }
+    },
+    [handleToggleTuner, loadFlow, showTuner]
+  );
 
   // Loading a preset or resetting to default replaces the chain. Leave any
   // takeover (tuner, tone browser, block detail) first so the new chain is

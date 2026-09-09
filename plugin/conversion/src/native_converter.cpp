@@ -52,6 +52,14 @@ inline float flipFloatSignBit(float x){
 
 void report(const StatusCallback& cb, const std::wstring& s) { if (cb) cb(s); }
 
+class DirectoryCleanup final {
+public:
+    explicit DirectoryCleanup(fs::path path):path_(std::move(path)){}
+    ~DirectoryCleanup(){std::error_code ignored;fs::remove_all(path_,ignored);}
+private:
+    fs::path path_;
+};
+
 std::uint16_t le16(const std::uint8_t* p) {
     return static_cast<std::uint16_t>(p[0]) | (static_cast<std::uint16_t>(p[1]) << 8);
 }
@@ -1727,7 +1735,7 @@ ConversionResult convertNamToClo(const fs::path& inputNam,const fs::path& output
         r.error="Missing nam_input_wav.wav next to the executable.";return r;
     }
 
-    const fs::path work=outputDirectory/(L".native_work_"+inputNam.stem().wstring());fs::remove_all(work,ec);fs::create_directories(work,ec);if(ec){r.error="Cannot create conversion work directory.";return r;}
+    const fs::path work=outputDirectory/(L".native_work_"+inputNam.stem().wstring());fs::remove_all(work,ec);fs::create_directories(work,ec);if(ec){r.error="Cannot create conversion work directory.";return r;}DirectoryCleanup cleanup(work);
     const fs::path stim=work/L"stimulus_70s.wav";report(status,L"Building original stimulus + selected Tail/Reamp...");if(!buildStimulus(originalStimulus,stimulus,stim,error)){r.error=error;fs::remove_all(work,ec);return r;}
     std::vector<float>s44;std::uint32_t ssr=0;if(!readPcm16Mono(stim,s44,ssr,error)){r.error=error;fs::remove_all(work,ec);return r;}
     fs::path modelPath;if(!prepareFullA2(inputNam,work,modelPath,error)){r.error=error;fs::remove_all(work,ec);return r;}

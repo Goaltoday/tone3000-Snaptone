@@ -12,11 +12,14 @@ on:
   pull_request:
     paths:
       - 'plugin/conversion/**'
+      - 'plugin/include/ChainBlock.h'
       - 'plugin/include/ConversionManager.h'
+      - 'plugin/include/Processor.h'
       - 'plugin/src/ConversionManager.cpp'
       - 'plugin/src/Processor*.cpp'
       - 'plugin/src/Editor*.cpp'
       - 'ui/**'
+      - 'test/**'
       - 'CMakeLists.txt'
       - 'plugin/CMakeLists.txt'
       - '.github/workflows/build-gp-edition.yml'
@@ -102,7 +105,7 @@ jobs:
         shell: bash
         run: cmake --build build --config "${{ env.BUILD_TYPE }}" --parallel 2
 
-      - name: Run DSP and conversion-facing tests
+      - name: Run DSP and NAM-to-CLO conversion tests
         shell: bash
         run: ctest --test-dir build/test --output-on-failure
 

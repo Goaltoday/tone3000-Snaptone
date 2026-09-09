@@ -175,6 +175,8 @@ void TONE3000Processor::serializeChainToTree(
     if (includeModelData && block->type != ChainBlockType::INSERT) {
       juce::ValueTree cacheState("ModelCache");
       for (const auto& [modelId, modelData] : block->modelCache) {
+        if (modelData == nullptr)
+          continue;
         juce::ValueTree cachedModel("CachedModel");
         cachedModel.setProperty("modelId", modelId, nullptr);
 
@@ -182,7 +184,7 @@ void TONE3000Processor::serializeChainToTree(
         // verbatim, which matters because this can run with chainMutex held
         // (~8 MB per heavy rig).
         cachedModel.setProperty(
-            "data", juce::var(juce::MemoryBlock(modelData.data(), modelData.size())), nullptr);
+            "data", juce::var(juce::MemoryBlock(modelData->data(), modelData->size())), nullptr);
 
         cacheState.appendChild(cachedModel, nullptr);
       }

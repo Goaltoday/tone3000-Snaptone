@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,18 +14,20 @@
 /**
     Owns the CPU/file-heavy NAM -> CLO conversion jobs used by the editor.
 
-    The processor snapshots model bytes before creating a Request.  The worker
-    therefore never touches ChainBlock, the audio thread, or the processor
-    after the request has been submitted.  A process-wide mutex serializes the
-    converter because NAM rendering and the 2048-tap fit are deliberately
-    memory hungry and several plugin instances may be open in one DAW.
+    The processor takes an immutable shared reference to the model bytes before
+    creating a Request. The worker therefore never touches ChainBlock, the
+    audio thread, or the processor after submission, and taking that reference
+    never copies a multi-megabyte NAM under the chain lock. A process-wide
+    mutex serializes the converter because NAM rendering and the 2048-tap fit
+    are deliberately memory hungry and several plugin instances may be open.
 */
 class ConversionManager {
 public:
   struct Request {
-    std::vector<std::uint8_t> namBytes;
+    std::shared_ptr<const std::vector<std::uint8_t>> namBytes;
     juce::String modelName;
-    juce::String originalStimulus;
+    const void* originalStimulusData = nullptr;
+    std::size_t originalStimulusSize = 0;
     juce::String recordedAudio;
     juce::String correctiveIr;
     juce::String referenceWav;
@@ -50,7 +53,7 @@ private:
     juce::String modelName;
     juce::String outputPath;
     juce::String error;
-    double finalRmseDb = 0.0;
+    std::optional<double> finalRmseDb;
     bool running = false;
     bool done = false;
     bool ok = false;
@@ -58,7 +61,7 @@ private:
 
   class Job;
 
-  static std::mutex globalConversionMutex;
+  static std::timed_mutex globalConversionMutex;
   juce::ThreadPool pool;
   mutable std::mutex stateMutex;
   std::shared_ptr<State> current;

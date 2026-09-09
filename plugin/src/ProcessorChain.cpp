@@ -791,13 +791,15 @@ void TONE3000Processor::loadToneInBackground(const std::string& blockId, int fir
                                              const juce::String& modelName, ChainBlockType type) {
   DBG("[Background] Loading tone for block: " << blockId);
 
-  std::vector<uint8_t> modelData = fetchModelFromUrl(modelUrl);
-  if (modelData.empty()) {
+  auto fetchedModelData = fetchModelFromUrl(modelUrl);
+  if (fetchedModelData.empty()) {
     DBG("[Background] Failed to fetch model from URL");
     markBlockLoadFailed(blockId);
     return;
   }
 
+  const auto modelData = std::make_shared<const ChainBlock::ModelBytes>(
+      std::move(fetchedModelData));
   const juce::String filename =
       modelName + (type == ChainBlockType::NAM ? ".nam" : ".wav");
 
@@ -815,7 +817,7 @@ void TONE3000Processor::loadToneInBackground(const std::string& blockId, int fir
     namSlimSize = block->namSlimSize;
   }
 
-  PreparedBlockModel prepared = prepareBlockModelOffThread(type, modelData, filename, namSlimSize);
+  PreparedBlockModel prepared = prepareBlockModelOffThread(type, *modelData, filename, namSlimSize);
   const bool applied = prepared.success;
 
   // A swapped tone's previous engine may still be audibly processing; let
@@ -857,7 +859,7 @@ void TONE3000Processor::switchModelInBackground(const std::string& blockId, int 
                                                 const juce::String& modelName) {
   DBG("[Background] Switching model for block: " << blockId << " to model ID: " << modelId);
 
-  std::vector<uint8_t> modelData;
+  ChainBlock::SharedModelBytes modelData;
   bool needsFetch = false;
   ChainBlockType blockTypeForPrepare = ChainBlockType::NAM;
   double namSlimSize = 0.0;
@@ -894,24 +896,31 @@ void TONE3000Processor::switchModelInBackground(const std::string& blockId, int 
 
   if (needsFetch) {
     DBG("[Background] Fetching model from URL: " << modelUrl);
-    modelData = fetchModelFromUrl(modelUrl);
+    auto fetchedModelData = fetchModelFromUrl(modelUrl);
 
-    if (modelData.empty()) {
+    if (fetchedModelData.empty()) {
       DBG("[Background] Failed to fetch model from URL");
       markBlockLoadFailed(blockId);
       return;
     }
+    modelData = std::make_shared<const ChainBlock::ModelBytes>(std::move(fetchedModelData));
   } else {
     // Local-model stash upkeep for cache-hit loads (fetches do their own in
     // fetchModelFromUrl); no-op for catalog URLs.
-    refreshLocalStashCopy(modelUrl, modelData);
+    if (modelData != nullptr)
+      refreshLocalStashCopy(modelUrl, *modelData);
+  }
+
+  if (modelData == nullptr || modelData->empty()) {
+    markBlockLoadFailed(blockId);
+    return;
   }
 
   const juce::String filename =
       modelName + (blockTypeForPrepare == ChainBlockType::NAM ? ".nam" : ".wav");
 
   PreparedBlockModel prepared =
-      prepareBlockModelOffThread(blockTypeForPrepare, modelData, filename, namSlimSize);
+      prepareBlockModelOffThread(blockTypeForPrepare, *modelData, filename, namSlimSize);
   const bool applied = prepared.success;
 
   // The outgoing model keeps processing until this moment; fade it out on
@@ -1704,6 +1713,10 @@ juce::var conversionObject(std::initializer_list<std::pair<const char*, juce::va
 }  // namespace
 
 juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
+#if HEADLESS
+  juce::ignoreUnused(options);
+  return conversionObject({{"error", "NAM to CLO conversion requires the GUI plugin build."}});
+#else
   auto* object = options.getDynamicObject();
   const auto blockId = optionString(object, "blockId").toStdString();
   ConversionManager::Request request;
@@ -1726,7 +1739,7 @@ juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
       return conversionObject({{"error", "Wait until the NAM has finished loading."}});
 
     const auto cache = selected->modelCache.find(selected->activeModelId);
-    if (cache == selected->modelCache.end() || cache->second.empty())
+    if (cache == selected->modelCache.end() || cache->second == nullptr || cache->second->empty())
       return conversionObject({{"error", "The active NAM bytes are not available."}});
     request.namBytes = cache->second;
     request.modelName = optionString(object, "modelName");
@@ -1747,29 +1760,16 @@ juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
   request.outputDirectory = optionString(object, "outputDirectory");
   request.correctiveIrEnabled = optionBool(object, "correctiveIrEnabled");
 
-#if !HEADLESS
-  // The official nam_input_wav.wav is embedded in WebAssets so a deployed
-  // plugin never depends on the current working directory. Materialize one
-  // stable per-user copy for the converter, refreshing only on size changes.
+  // The official nam_input_wav.wav is embedded in WebAssets. Hand its stable
+  // BinaryData view to the worker, which writes a private temporary copy;
+  // the message thread never writes the 12 MB resource or trusts a stale
+  // same-size cache file.
   int stimulusSize = 0;
   const char* stimulusData = BinaryData::getNamedResource("nam_input_wav_wav", stimulusSize);
   if (stimulusData == nullptr || stimulusSize <= 0)
     return conversionObject({{"error", "The embedded conversion stimulus is missing from this build."}});
-  const auto stimulusFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                .getChildFile("TONE3000")
-                                .getChildFile("Conversion")
-                                .getChildFile("nam_input_wav.wav");
-  if (!stimulusFile.existsAsFile() || stimulusFile.getSize() != stimulusSize) {
-    if (!stimulusFile.getParentDirectory().createDirectory().wasOk()
-        && !stimulusFile.getParentDirectory().isDirectory())
-      return conversionObject({{"error", "Cannot create the conversion resource directory."}});
-    if (!stimulusFile.replaceWithData(stimulusData, static_cast<size_t>(stimulusSize)))
-      return conversionObject({{"error", "Cannot materialize the embedded conversion stimulus."}});
-  }
-  request.originalStimulus = stimulusFile.getFullPathName();
-#else
-  return conversionObject({{"error", "NAM to CLO conversion requires the GUI plugin build."}});
-#endif
+  request.originalStimulusData = stimulusData;
+  request.originalStimulusSize = static_cast<std::size_t>(stimulusSize);
 
   if (request.outputDirectory.isEmpty()) {
     request.outputDirectory = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
@@ -1778,10 +1778,17 @@ juce::var TONE3000Processor::startNamToClo(const juce::var& options) {
   if (conversionManager == nullptr)
     return conversionObject({{"error", "The conversion service is unavailable."}});
   return conversionManager->start(std::move(request));
+#endif
 }
 
 juce::var TONE3000Processor::getNamToCloStatus(const juce::String& jobId) const {
+#if HEADLESS
+  return conversionObject({{"jobId", jobId}, {"phase", "unavailable"},
+                           {"error", "NAM to CLO conversion requires the GUI plugin build."},
+                           {"running", false}, {"done", true}, {"ok", false}});
+#else
   if (conversionManager == nullptr)
     return conversionObject({{"jobId", jobId}, {"phase", "unavailable"}, {"error", "The conversion service is unavailable."}});
   return conversionManager->getStatus(jobId);
+#endif
 }

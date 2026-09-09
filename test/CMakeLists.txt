@@ -110,3 +110,28 @@ add_dependencies(DspTests NAM)
 
 include(GoogleTest)
 gtest_discover_tests(DspTests)
+
+# Converter regression suite: exercises the final direct Tone Match and the
+# exact GP-200 B1024 / GP-5 B512 serialization in Actions. It is independent
+# of JUCE and NAMCore, so failures identify the converter/export stage.
+add_executable(ConversionTests
+    src/conversion_tests.cpp
+    "${LIB_DIR}/soxr/src/fft4g.c"
+)
+target_compile_features(ConversionTests PRIVATE cxx_std_20)
+target_include_directories(ConversionTests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../plugin/conversion/src"
+    "${LIB_DIR}/soxr/src"
+)
+if(MSVC)
+    target_compile_definitions(ConversionTests PRIVATE NOMINMAX)
+    target_compile_options(ConversionTests PRIVATE /W4 /WX- /permissive- /EHsc /utf-8 /fp:precise)
+else()
+    target_compile_options(ConversionTests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(NAME ConversionDirect
+    COMMAND ConversionTests "${CMAKE_CURRENT_BINARY_DIR}/conversion-direct")
+add_test(NAME ConversionLongTail
+    COMMAND ConversionTests "${CMAKE_CURRENT_BINARY_DIR}/conversion-long-tail" long)
+set_tests_properties(ConversionDirect ConversionLongTail PROPERTIES RUN_SERIAL TRUE TIMEOUT 240)

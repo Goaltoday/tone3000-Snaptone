@@ -71,8 +71,13 @@ struct ChainBlock {
   juce::var toneVar;
   juce::var toneSummary;
 
-  // Model cache: stores downloaded model data by model ID
-  std::map<int, std::vector<uint8_t>> modelCache;
+  // Model cache: immutable, reference-counted model bytes by model ID. This
+  // makes snapshots (converter, duplicate, clipboard) O(1) while the chain
+  // lock is held instead of copying several megabytes on the audio path.
+  using ModelBytes = std::vector<uint8_t>;
+  using SharedModelBytes = std::shared_ptr<const ModelBytes>;
+  using ModelCache = std::map<int, SharedModelBytes>;
+  ModelCache modelCache;
 
   // State flags
   bool loaded;   // True when active model is loaded and ready

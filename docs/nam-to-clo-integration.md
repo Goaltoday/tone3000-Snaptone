@@ -17,22 +17,22 @@ separado del audio.
 6. Se exporta el candidato final sin confianza espectral, sin selección de
    candidatos y sin suavizado del 5 %.
 
-El estímulo oficial `nam_input_wav.wav` se compila como `BinaryData`, se
-materializa en la carpeta de datos del usuario y se reutiliza en las
-conversiones posteriores.
+El estímulo oficial `nam_input_wav.wav` se compila como `BinaryData`. El worker
+crea una copia privada dentro de la carpeta temporal de cada trabajo; así no
+se bloquea la interfaz escribiendo el WAV ni se reutiliza una caché dañada.
 
 ## Puntos de integración
 
 - `plugin/include/ConversionManager.h` y `plugin/src/ConversionManager.cpp`:
   cola de conversión, estado consultable y serialización del modelo temporal.
-- `plugin/src/ProcessorChain.cpp`: snapshot bajo `chainMutex`, opciones y
-  materialización del estímulo embebido.
+- `plugin/src/ProcessorChain.cpp`: referencia inmutable O(1) a los bytes del
+  modelo, opciones y acceso al estímulo embebido.
 - `plugin/src/EditorWebViewSetup.cpp`: funciones nativas
   `startNamToClo`, `getNamToCloStatus` y `pickConversionFile`.
 - `plugin/src/Editor.cpp` / `plugin/include/Editor.h`: selectores nativos de
   WAV y carpeta de salida.
-- `ui/src/components/ConversionPanel.tsx`: pestaña de usuario y polling del
-  trabajo.
+- `ui/src/components/ConversionPanel.tsx`: pestaña, polling que termina al
+  completar y reconexión al trabajo si la pestaña se cierra y se reabre.
 - `ui/src/components/Plugin.tsx` y `PluginHeader.tsx`: icono y takeover de la
   pestaña.
 
@@ -44,11 +44,14 @@ NeuralAmpModelerCore que ya usa TONE3000. El WAV se añade a `WEB_ASSETS`.
 
 La acción manual `.github/workflows/build-gp-edition.yml` configura Windows
 x64, compila la UI, reconfigura CMake para incluir los recursos generados,
-construye VST3 y Standalone, ejecuta `ctest` y publica un ZIP sin firma. La
+construye VST3 y Standalone, ejecuta las pruebas DSP y las regresiones de
+exportación B1024/B512 mediante `ctest`, y publica un ZIP sin firma. La
 firma de código, notarización y PACE deben añadirse en un job posterior con
 los secretos del proyecto.
 
 Las funciones nativas están diseñadas para mantenerse síncronas sólo en la
 petición inicial; el trabajo pesado y los cambios de estado ocurren fuera del
-hilo de audio. Al cerrar el procesador se espera al worker antes de destruir
-la cadena.
+hilo de audio. La espera global entre instancias comprueba la cancelación, las
+excepciones quedan contenidas dentro del worker y las carpetas temporales se
+limpian también en errores o cancelaciones. Al cerrar el procesador se solicita
+la cancelación y se espera al worker antes de destruir la cadena.
